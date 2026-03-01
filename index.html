@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dual ChatGPT Clone + Token Efficiency</title>
+
+    <style>
+        :root{
+            --bg:#f7f7f8;
+            --panel:#fff;
+            --border:#e0e0e0;
+            --user:#10a37f;
+            --assistant:#f2f2f2;
+            --text:#111;
+            --muted:#666;
+            --radius:12px;
+        }
+
+        *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
+        body{display:flex;height:100vh;background:var(--bg);color:var(--text);overflow:hidden;}
+
+        /* Sidebar */
+        .sidebar{width:220px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:10px;}
+        .sidebar h2{text-align:center;font-size:16px;margin:10px 0;}
+        .menu-item{padding:10px;border-radius:var(--radius);cursor:pointer;display:flex;gap:8px;}
+        .menu-item:hover{background:#f0f0f0;}
+        .menu-item.active{background:#e0f7f2;}
+        .icon{width:18px;height:18px;background:#666;color:#fff;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:12px;}
+        .menu-divider{border-top:1px solid var(--border);margin:10px 0;}
+        .user-section{margin-top:auto;text-align:center;border-top:1px solid var(--border);padding:10px;}
+        .user-avatar{width:40px;height:40px;border-radius:50%;background:#ccc;margin:auto;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;}
+        .user-version{font-size:12px;color:var(--muted);}
+
+        /* Main */
+        .main{
+            flex:1;
+            display:flex;
+            flex-direction:column;
+            min-height:0;  /* 🔥 REQUIRED */
+        }
+        .topbar{height:52px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 14px;}
+        .topbar button{padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:#fafafa;cursor:pointer;}
+
+        .token-panel{
+            background:#f0fdf9;
+            border:1px solid #c7efe4;
+            padding:6px 14px;
+            border-radius:999px;
+            font-size:13px;
+            color:#065f46;
+            font-weight:500;
+            white-space:nowrap;
+        }
+
+        /* Chat layout */
+        .layout-container{
+            flex:1;
+            display:flex;
+            min-height:0;   /* 🔥 REQUIRED */
+        }
+        .chat{
+            flex:1;
+            display:flex;
+            flex-direction:column;
+            background:var(--panel);
+            margin:8px;
+            border-radius:var(--radius);
+            box-shadow:0 4px 20px rgba(0,0,0,.05);
+            min-height:0; /* IMPORTANT */
+        }
+        .chat-header{padding:12px;border-bottom:1px solid var(--border);background:#fafafa;font-weight:600;}
+        .messages{
+            flex:1;
+            overflow-y:auto;
+            padding:16px;
+            display:flex;
+            flex-direction:column;
+            gap:12px;
+            min-height:0; /* IMPORTANT */
+        }
+        .msg{max-width:75%;padding:12px 16px;border-radius:var(--radius);font-size:14px;}
+        .msg.user{background:var(--user);color:#fff;align-self:flex-end;}
+        .msg.assistant{background:var(--assistant);}
+
+        .divider{width:5px;cursor:ew-resize;}
+
+        .input-bar{display:flex;padding:12px;border-top:1px solid var(--border);gap:8px;background:var(--panel);}
+        .input-bar input{flex:1;padding:12px;border-radius:999px;border:1px solid var(--border);}
+        .input-bar button{padding:0 20px;border-radius:999px;border:none;background:var(--user);color:#fff;font-weight:600;cursor:pointer;}
+    </style>
+</head>
+
+<body>
+
+<div class="sidebar">
+    <h2>Menu</h2>
+    <div class="menu-item active"><div class="icon">💬</div>Chat</div>
+    <div class="menu-item"><div class="icon">🆕</div>New Chat</div>
+    <div class="menu-item"><div class="icon">🔍</div>Search</div>
+    <div class="menu-item"><div class="icon">🖼️</div>Images</div>
+    <div class="menu-item"><div class="icon">🛠️</div>Apps</div>
+
+    <div class="menu-divider"></div>
+
+    <div class="user-section">
+        <div class="user-avatar">JL</div>
+        <div>Julian Lee</div>
+        <div class="user-version">Free</div>
+    </div>
+</div>
+
+<div class="main">
+
+    <div class="topbar">
+        <div class="token-panel" id="tokenPanel">
+            Original: 0 | Optimized: 0 | Saved: 0 | 0% | ⚡ 0 kWh
+        </div>
+        <button>Share</button>
+        <button>Export</button>
+    </div>
+
+    <div class="layout-container">
+
+        <div class="chat" id="chatAContainer">
+            <div class="chat-header">Without Filter</div>
+            <div class="messages" id="chatA"></div>
+        </div>
+
+        <div class="divider" id="divider"></div>
+
+        <div class="chat" id="chatBContainer">
+            <div class="chat-header">With Filter</div>
+            <div class="messages" id="chatB"></div>
+        </div>
+
+    </div>
+
+    <div class="input-bar">
+        <input id="input" placeholder="Type a message for both chats...">
+        <button id="sendBtn">Send</button>
+    </div>
+
+</div>
+
+<script>
+    async function sendMessage(){
+
+        const input = document.getElementById("input");
+        const text = input.value.trim();
+        if(!text) return;
+
+        const chatA = document.getElementById("chatA");
+        const chatB = document.getElementById("chatB");
+
+        // =========================
+        // Conversation A (RAW INPUT)
+        // =========================
+        const userA = document.createElement("div");
+        userA.className = "msg user";
+        userA.textContent = text;
+        chatA.appendChild(userA);
+
+        const loadingA = document.createElement("div");
+        loadingA.className = "msg assistant";
+        loadingA.textContent = "Thinking...";
+        chatA.appendChild(loadingA);
+
+        // =========================
+// Conversation B Loading UX
+// =========================
+
+// Green bubble first (optimizing...)
+        const optimizingBubble = document.createElement("div");
+        optimizingBubble.className = "msg user";
+        optimizingBubble.textContent = "Optimizing prompt...";
+        chatB.appendChild(optimizingBubble);
+
+// Gray thinking bubble
+        const loadingB = document.createElement("div");
+        loadingB.className = "msg assistant";
+        loadingB.textContent = "Thinking...";
+        chatB.appendChild(loadingB);
+        input.value = "";
+
+        try {
+
+            const response = await fetch("http://127.0.0.1:5000/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ prompt: text })
+            });
+
+            const data = await response.json();
+
+            loadingA.remove();
+            loadingB.remove();
+
+// Replace "Optimizing prompt..." with actual optimized prompt
+            optimizingBubble.textContent = data.optimized_prompt;
+
+            // =========================
+// Conversation A → API response to RAW
+// =========================
+            const assistantA = document.createElement("div");
+            assistantA.className = "msg assistant";
+            assistantA.innerHTML = marked.parse(String(data.response_a || "No response returned."));
+            chatA.appendChild(assistantA);
+
+// =========================
+// Conversation B → Optimized input
+// =========================
+
+
+
+            const assistantB = document.createElement("div");
+            assistantB.className = "msg assistant";
+            assistantB.innerHTML = marked.parse(String(data.response_b || "No response returned."));
+            chatB.appendChild(assistantB);
+
+            // =========================
+            // Update Token Panel
+            // =========================
+            document.getElementById("tokenPanel").textContent =
+                `Original: ${data.original_tokens} | Optimized: ${data.optimized_tokens} | Saved: ${data.token_saved} | ${data.percent}% | ⚡ ${data.energy_saved} kWh`;
+
+            chatA.scrollTop = chatA.scrollHeight;
+            chatB.scrollTop = chatB.scrollHeight;
+
+        } catch (err) {
+            console.error(err);
+            loadingA.textContent = "Server error.";
+            loadingB.remove();
+        }
+    }
+
+    document.getElementById("sendBtn").onclick = sendMessage;
+    document.getElementById("input").addEventListener("keydown", e => {
+        if (e.key === "Enter") sendMessage();
+    });
+</script>
+
+</body>
+</html>
